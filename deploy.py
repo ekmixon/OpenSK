@@ -173,11 +173,12 @@ APP_HEAP_SIZE = 90000
 
 
 def get_supported_boards():
-  boards = []
-  for name, props in SUPPORTED_BOARDS.items():
-    if all((os.path.exists(os.path.join(props.path, "Cargo.toml")),
-            (props.app_ldscript and os.path.exists(props.app_ldscript)))):
-      boards.append(name)
+  boards = [
+      name for name, props in SUPPORTED_BOARDS.items() if all((
+          os.path.exists(os.path.join(props.path, "Cargo.toml")),
+          (props.app_ldscript and os.path.exists(props.app_ldscript)),
+      ))
+  ]
   return tuple(set(boards))
 
 
@@ -205,8 +206,9 @@ def info(msg):
 
 def assert_mandatory_binary(binary):
   if not shutil.which(binary):
-    fatal(("Couldn't find {} binary. Make sure it is installed and "
-           "that your PATH is set correctly.").format(binary))
+    fatal(
+        f"Couldn't find {binary} binary. Make sure it is installed and that your PATH is set correctly."
+    )
 
 
 def assert_python_library(module):
@@ -245,10 +247,7 @@ class RemoveConstAction(argparse.Action):
     items = getattr(namespace, self.dest, [])
     if items is None:
       items = []
-    if isinstance(items, list):
-      items = items[:]
-    else:
-      items = copy.copy(items)
+    items = items[:] if isinstance(items, list) else copy.copy(items)
     if self.const in items:
       items.remove(self.const)
     setattr(namespace, self.dest, items)
@@ -289,7 +288,7 @@ class OpenSKInstaller:
       subprocess.run(
           cmd, stdout=stdout, timeout=None, check=True, env=env, cwd=cwd)
     except subprocess.CalledProcessError as e:
-      fatal("Failed to execute {}: {}".format(cmd[0], str(e)))
+      fatal(f"Failed to execute {cmd[0]}: {str(e)}")
 
   def checked_command_output(self, cmd, env=None, cwd=None):
     cmd_output = ""
@@ -302,8 +301,8 @@ class OpenSKInstaller:
           env=env,
           cwd=cwd).stdout
     except subprocess.CalledProcessError as e:
-      fatal("Failed to execute {}: {}".format(cmd[0], str(e)))
-      # Unreachable because fatal() will exit
+      fatal(f"Failed to execute {cmd[0]}: {str(e)}")
+        # Unreachable because fatal() will exit
     return cmd_output.decode()
 
   def update_rustc_if_needed(self):
@@ -318,9 +317,9 @@ class OpenSKInstaller:
       # empty value.
       target_toolchain.append("")
     current_version = self.checked_command_output(["rustc", "--version"])
-    if not (target_toolchain[0] in current_version and
-            target_toolchain[1] in current_version):
-      info("Updating rust toolchain to {}".format("-".join(target_toolchain)))
+    if (target_toolchain[0] not in current_version
+        or target_toolchain[1] not in current_version):
+      info(f'Updating rust toolchain to {"-".join(target_toolchain)}')
       # Need to update
       rustup_install = ["rustup"]
       if self.args.verbose_build:
@@ -337,7 +336,7 @@ class OpenSKInstaller:
     info("Rust toolchain up-to-date")
 
   def build_tockos(self):
-    info("Building Tock OS for board {}".format(self.args.board))
+    info(f"Building Tock OS for board {self.args.board}")
     props = SUPPORTED_BOARDS[self.args.board]
     out_directory = os.path.join("third_party", "tock", "target", props.arch,
                                  "release")
@@ -349,7 +348,7 @@ class OpenSKInstaller:
     self.checked_command(["make"], cwd=props.path, env=env)
 
   def build_example(self):
-    info("Building example {}".format(self.args.application))
+    info(f"Building example {self.args.application}")
     self._build_app_or_example(is_example=True)
 
   def build_opensk(self):
@@ -365,20 +364,23 @@ class OpenSKInstaller:
     props = SUPPORTED_BOARDS[self.args.board]
     rust_flags = [
         "-C",
-        "link-arg=-T{}".format(props.app_ldscript),
+        f"link-arg=-T{props.app_ldscript}",
         "-C",
         "relocation-model=static",
         "-D",
         "warnings",
-        "--remap-path-prefix={}=".format(os.getcwd()),
+        f"--remap-path-prefix={os.getcwd()}=",
     ]
     env = os.environ.copy()
     env["RUSTFLAGS"] = " ".join(rust_flags)
     env["APP_HEAP_SIZE"] = str(APP_HEAP_SIZE)
 
     command = [
-        "cargo", "build", "--release", "--target={}".format(props.arch),
-        "--features={}".format(",".join(self.args.features))
+        "cargo",
+        "build",
+        "--release",
+        f"--target={props.arch}",
+        f'--features={",".join(self.args.features)}',
     ]
     if is_example:
       command.extend(["--example", self.args.application])
@@ -404,8 +406,9 @@ class OpenSKInstaller:
   def create_tab_file(self, binaries):
     assert binaries
     assert self.args.application
-    info("Generating Tock TAB file for application/example {}".format(
-        self.args.application))
+    info(
+        f"Generating Tock TAB file for application/example {self.args.application}"
+    )
     elf2tab_ver = self.checked_command_output(
         ["elf2tab/bin/elf2tab", "--version"]).split(
             "\n", maxsplit=1)[0]
@@ -414,8 +417,7 @@ class OpenSKInstaller:
           ("Detected unsupported elf2tab version {!a}. The following "
            "commands may fail. Please use 0.6.0 instead.").format(elf2tab_ver))
     os.makedirs(self.tab_folder, exist_ok=True)
-    tab_filename = os.path.join(self.tab_folder,
-                                "{}.tab".format(self.args.application))
+    tab_filename = os.path.join(self.tab_folder, f"{self.args.application}.tab")
     elf2tab_args = [
         "elf2tab/bin/elf2tab", "--deterministic", "--package-name",
         self.args.application, "-o", tab_filename
@@ -423,13 +425,15 @@ class OpenSKInstaller:
     if self.args.verbose_build:
       elf2tab_args.append("--verbose")
     for arch, app_file in binaries.items():
-      dest_file = os.path.join(self.tab_folder, "{}.elf".format(arch))
+      dest_file = os.path.join(self.tab_folder, f"{arch}.elf")
       shutil.copyfile(app_file, dest_file)
       elf2tab_args.append(dest_file)
 
     elf2tab_args.extend([
-        "--stack={}".format(STACK_SIZE), "--app-heap={}".format(APP_HEAP_SIZE),
-        "--kernel-heap=1024", "--protected-region-size=64"
+        f"--stack={STACK_SIZE}",
+        f"--app-heap={APP_HEAP_SIZE}",
+        "--kernel-heap=1024",
+        "--protected-region-size=64",
     ])
     if self.args.elf2tab_output:
       output = self.checked_command_output(elf2tab_args)
@@ -439,7 +443,7 @@ class OpenSKInstaller:
 
   def install_tab_file(self, tab_filename):
     assert self.args.application
-    info("Installing Tock application {}".format(self.args.application))
+    info(f"Installing Tock application {self.args.application}")
     board_props = SUPPORTED_BOARDS[self.args.board]
     args = copy.copy(self.tockloader_default_args)
     setattr(args, "app_address", board_props.app_address)
@@ -452,8 +456,7 @@ class OpenSKInstaller:
     try:
       tock.install(tabs, replace="yes", erase=args.erase)
     except TockLoaderException as e:
-      fatal("Couldn't install Tock application {}: {}".format(
-          self.args.application, str(e)))
+      fatal(f"Couldn't install Tock application {self.args.application}: {str(e)}")
 
   def get_padding(self):
     padding = tbfh.TBFHeaderPadding(
@@ -463,10 +466,15 @@ class OpenSKInstaller:
 
   def install_tock_os(self):
     board_props = SUPPORTED_BOARDS[self.args.board]
-    kernel_file = os.path.join("third_party", "tock", "target",
-                               board_props.arch, "release",
-                               "{}.bin".format(self.args.board))
-    info("Flashing file {}.".format(kernel_file))
+    kernel_file = os.path.join(
+        "third_party",
+        "tock",
+        "target",
+        board_props.arch,
+        "release",
+        f"{self.args.board}.bin",
+    )
+    info(f"Flashing file {kernel_file}.")
     with open(kernel_file, "rb") as f:
       kernel = f.read()
     args = copy.copy(self.tockloader_default_args)
@@ -476,7 +484,7 @@ class OpenSKInstaller:
     try:
       tock.flash_binary(kernel, board_props.kernel_address)
     except TockLoaderException as e:
-      fatal("Couldn't install Tock OS: {}".format(str(e)))
+      fatal(f"Couldn't install Tock OS: {str(e)}")
 
   def install_padding(self):
     padding = self.get_padding()
@@ -489,7 +497,7 @@ class OpenSKInstaller:
     try:
       tock.flash_binary(padding, args.address)
     except TockLoaderException as e:
-      fatal("Couldn't install padding: {}".format(str(e)))
+      fatal(f"Couldn't install padding: {str(e)}")
 
   def clear_apps(self):
     args = copy.copy(self.tockloader_default_args)
@@ -505,8 +513,7 @@ class OpenSKInstaller:
       tock.erase_apps()
     except TockLoaderException as e:
       # Erasing apps is not critical
-      info(("A non-critical error occurred while erasing "
-            "apps: {}".format(str(e))))
+      info(f"A non-critical error occurred while erasing apps: {str(e)}")
 
   def clear_storage(self):
     if self.args.programmer == "none":
@@ -521,16 +528,18 @@ class OpenSKInstaller:
       try:
         tock.flash_binary(storage, board_props.storage_address)
       except TockLoaderException as e:
-        fatal("Couldn't erase the persistent storage: {}".format(str(e)))
+        fatal(f"Couldn't erase the persistent storage: {str(e)}")
       return 0
     if self.args.programmer == "pyocd":
       self.checked_command([
-          "pyocd", "erase", "--target={}".format(board_props.pyocd_target),
-          "--sector", "{}+{}".format(board_props.storage_address,
-                                     board_props.storage_size)
+          "pyocd",
+          "erase",
+          f"--target={board_props.pyocd_target}",
+          "--sector",
+          f"{board_props.storage_address}+{board_props.storage_size}",
       ])
       return 0
-    fatal("Programmer {} is not supported.".format(self.args.programmer))
+    fatal(f"Programmer {self.args.programmer} is not supported.")
 
   # pylint: disable=protected-access
   def verify_flashed_app(self, expected_app):
@@ -555,9 +564,14 @@ class OpenSKInstaller:
 
     if self.args.tockos:
       # Process kernel
-      kernel_path = os.path.join("third_party", "tock", "target",
-                                 board_props.arch, "release",
-                                 "{}.bin".format(self.args.board))
+      kernel_path = os.path.join(
+          "third_party",
+          "tock",
+          "target",
+          board_props.arch,
+          "release",
+          f"{self.args.board}.bin",
+      )
       with open(kernel_path, "rb") as kernel:
         kern_hex = intelhex.IntelHex()
         kern_hex.frombytes(kernel.read(), offset=board_props.kernel_address)
@@ -572,25 +586,27 @@ class OpenSKInstaller:
         final_hex.merge(padding_hex, overlap="error")
 
       # Now we can add the application from the TAB file
-      app_tab_path = "target/tab/{}.tab".format(self.args.application)
+      app_tab_path = f"target/tab/{self.args.application}.tab"
       assert os.path.exists(app_tab_path)
       app_tab = tab.TAB(app_tab_path)
       if board_props.arch not in app_tab.get_supported_architectures():
-        fatal(("It seems that the TAB file was not produced for the "
-               "architecture {}".format(board_props.arch)))
+        fatal(
+            f"It seems that the TAB file was not produced for the architecture {board_props.arch}"
+        )
       app_hex = intelhex.IntelHex()
       app_hex.frombytes(
           app_tab.extract_app(board_props.arch).get_binary(
               board_props.app_address),
           offset=board_props.app_address)
       final_hex.merge(app_hex)
-    info("Generating all-merged HEX file: {}".format(dest_file))
+    info(f"Generating all-merged HEX file: {dest_file}")
     final_hex.tofile(dest_file, format="hex")
 
   def check_prerequisites(self):
     if not tockloader.__version__.startswith("1.5."):
-      fatal(("Your version of tockloader seems incompatible: found {}, "
-             "expected 1.5.x.".format(tockloader.__version__)))
+      fatal(
+          f"Your version of tockloader seems incompatible: found {tockloader.__version__}, expected 1.5.x."
+      )
 
     if self.args.programmer == "jlink":
       assert_mandatory_binary("JLinkExe")
@@ -610,8 +626,9 @@ class OpenSKInstaller:
       assert_python_library("nordicsemi.lister")
       nrfutil_version = __import__("nordicsemi.version").version.NRFUTIL_VERSION
       if not nrfutil_version.startswith("6."):
-        fatal(("You need to install nrfutil python3 package v6.0 or above. "
-               "Found: {}".format(nrfutil_version)))
+        fatal(
+            f"You need to install nrfutil python3 package v6.0 or above. Found: {nrfutil_version}"
+        )
       if not SUPPORTED_BOARDS[self.args.board].nordic_dfu:
         fatal("This board doesn't support flashing over DFU.")
 
@@ -622,8 +639,8 @@ class OpenSKInstaller:
     self.check_prerequisites()
     self.update_rustc_if_needed()
 
-    if not (self.args.tockos or self.args.application or
-            self.args.clear_storage):
+    if (not self.args.tockos and not self.args.application
+        and not self.args.clear_storage):
       info("Nothing to do.")
       return 0
 
@@ -655,7 +672,7 @@ class OpenSKInstaller:
       # Install padding and application if needed
       if self.args.application:
         self.install_padding()
-        self.install_tab_file("target/tab/{}.tab".format(self.args.application))
+        self.install_tab_file(f"target/tab/{self.args.application}.tab")
         if self.verify_flashed_app(self.args.application):
           info("You're all set!")
           return 0
@@ -667,36 +684,45 @@ class OpenSKInstaller:
       return 0
 
     if self.args.programmer in ("pyocd", "nordicdfu", "none"):
-      dest_file = "target/{}_merged.hex".format(self.args.board)
+      dest_file = f"target/{self.args.board}_merged.hex"
       os.makedirs("target", exist_ok=True)
       self.create_hex_file(dest_file)
 
       if self.args.programmer == "pyocd":
         info("Flashing HEX file")
         self.checked_command([
-            "pyocd", "flash", "--target={}".format(board_props.pyocd_target),
-            "--format=hex", "--erase=auto", dest_file
+            "pyocd",
+            "flash",
+            f"--target={board_props.pyocd_target}",
+            "--format=hex",
+            "--erase=auto",
+            dest_file,
         ])
       if self.args.programmer == "nordicdfu":
         info("Creating DFU package")
-        dfu_pkg_file = "target/{}_dfu.zip".format(self.args.board)
+        dfu_pkg_file = f"target/{self.args.board}_dfu.zip"
         self.checked_command([
-            "nrfutil", "pkg", "generate", "--hw-version=52", "--sd-req=0",
-            "--application-version=1", "--application={}".format(dest_file),
-            dfu_pkg_file
+            "nrfutil",
+            "pkg",
+            "generate",
+            "--hw-version=52",
+            "--sd-req=0",
+            "--application-version=1",
+            f"--application={dest_file}",
+            dfu_pkg_file,
         ])
         info(
             "Please insert the dongle and switch it to DFU mode by keeping the "
             "button pressed while inserting...")
         info("Press [ENTER] when ready.")
         _ = input()
-        # Search for the DFU devices
-        serial_number = []
         # pylint: disable=g-import-not-at-top,import-outside-toplevel
         from nordicsemi.lister import device_lister
-        for device in device_lister.DeviceLister().enumerate():
-          if device.vendor_id == "1915" and device.product_id == "521F":
-            serial_number.append(device.serial_number)
+        serial_number = [
+            device.serial_number
+            for device in device_lister.DeviceLister().enumerate()
+            if device.vendor_id == "1915" and device.product_id == "521F"
+        ]
         if not serial_number:
           fatal("Couldn't find any DFU device on your system.")
         if len(serial_number) > 1:
@@ -705,9 +731,11 @@ class OpenSKInstaller:
         info("Flashing device using DFU...")
         return subprocess.run(
             [
-                "nrfutil", "dfu", "usb-serial",
-                "--package={}".format(dfu_pkg_file),
-                "--serial-number={}".format(serial_number[0])
+                "nrfutil",
+                "dfu",
+                "usb-serial",
+                f"--package={dfu_pkg_file}",
+                f"--serial-number={serial_number[0]}",
             ],
             check=False,
             timeout=None,
@@ -747,7 +775,7 @@ def main(args):
 
   if args.listing:
     # Missing check?
-    fatal("Listing {} is not implemented.".format(args.listing))
+    fatal(f"Listing {args.listing} is not implemented.")
 
   OpenSKInstaller(args).run()
 

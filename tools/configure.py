@@ -64,12 +64,14 @@ def info(msg):
 def get_opensk_devices(batch_mode):
   devices = []
   for dev in hid.CtapHidDevice.list_devices():
-    if (dev.descriptor.vid, dev.descriptor.pid) == OPENSK_VID_PID:
-      if dev.capabilities & hid.CAPABILITY.CBOR:
-        if batch_mode:
-          devices.append(ctap2.CTAP2(dev))
-        else:
-          return [ctap2.CTAP2(dev)]
+    if (
+        dev.descriptor.vid,
+        dev.descriptor.pid,
+    ) == OPENSK_VID_PID and dev.capabilities & hid.CAPABILITY.CBOR:
+      if batch_mode:
+        devices.append(ctap2.CTAP2(dev))
+      else:
+        return [ctap2.CTAP2(dev)]
   return devices
 
 
@@ -137,16 +139,15 @@ def main(args):
     if authenticator.device.capabilities & hid.CAPABILITY.WINK:
       authenticator.device.wink()
     aaguid = uuid.UUID(bytes=authenticator.get_info().aaguid)
-    info("Programming OpenSK device AAGUID {} ({}).".format(
-        aaguid, authenticator.device))
+    info(f"Programming OpenSK device AAGUID {aaguid} ({authenticator.device}).")
     info("Please touch the device to confirm...")
     try:
       result = authenticator.send_cbor(
           OPENSK_VENDOR_CONFIGURE,
           data=cbor_data,
       )
-      info("Certificate: {}".format("Present" if result[1] else "Missing"))
-      info("Private Key: {}".format("Present" if result[2] else "Missing"))
+      info(f'Certificate: {"Present" if result[1] else "Missing"}')
+      info(f'Private Key: {"Present" if result[2] else "Missing"}')
       if args.lock:
         info("Device is now locked down!")
     except ctap.CtapError as ex:
@@ -160,7 +161,7 @@ def main(args):
             ("Failed to configure OpenSK (device is partially programmed but "
              "the given cert/key don't match the ones currently programmed)."))
       else:
-        error("Failed to configure OpenSK (unknown error: {}".format(ex))
+        error(f"Failed to configure OpenSK (unknown error: {ex}")
 
 
 if __name__ == "__main__":
